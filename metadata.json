@@ -1,0 +1,6 @@
+{
+  "name": "Measurement Plan Generator",
+  "description": "Turn business goals into draft digital analytics measurement plans with KPIs, tracking events, and ready-to-export tracking tables.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
