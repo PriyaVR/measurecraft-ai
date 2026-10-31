@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Header } from './components/Header';
 import { DraftReviewBanner } from './components/DraftReviewBanner';
 import { GoalInputForm } from './components/GoalInputForm';
@@ -13,12 +13,17 @@ import { EventsSection } from './components/EventsSection';
 import { TrackingPlanTable } from './components/TrackingPlanTable';
 import { GovernanceTips } from './components/GovernanceTips';
 import { ConsultantGuideModal } from './components/ConsultantGuideModal';
+import { ApiKeyModal } from './components/ApiKeyModal';
 import {
   MeasurementPlan,
   PlanApiResponse,
   ClarificationQuestion,
   DefinitionData,
 } from './types';
+import {
+  generateMeasurementPlanClientSide,
+  getEffectiveApiKey,
+} from './services/measurementPlanService';
 import {
   checkGoalScope,
   checkGoalClarity,
@@ -66,8 +71,14 @@ export default function App() {
   // Generated Plan
   const [plan, setPlan] = useState<MeasurementPlan | null>(null);
 
-  // Guide modal
+  // Guide & API Key modals
   const [showGuide, setShowGuide] = useState(false);
+  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+  const [hasApiKey, setHasApiKey] = useState(() => Boolean(getEffectiveApiKey()));
+
+  const handleKeyChange = () => {
+    setHasApiKey(Boolean(getEffectiveApiKey()));
+  };
 
   const resultsRef = useRef<HTMLDivElement>(null);
   const clarificationRef = useRef<HTMLDivElement>(null);
@@ -81,33 +92,14 @@ export default function App() {
     setErrorMessage(null);
 
     try {
-      const response = await fetch('/api/generate-plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          businessGoal: businessGoal.trim(),
-          industry,
-          platform,
-          analyticsTool,
-          clarifications,
-        }),
+      // Pure client-side generation communicating directly with Gemini API or local expert engine
+      const data: PlanApiResponse = await generateMeasurementPlanClientSide({
+        businessGoal: businessGoal.trim(),
+        industry,
+        platform,
+        analyticsTool,
+        clarifications,
       });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        if (errorData.isOutOfScope || errorData.outOfScopeError) {
-          setPlan(null);
-          setIsVague(false);
-          setClarificationQuestions([]);
-          setOutOfScopeError(
-            errorData.outOfScopeError || errorData.error || OUT_OF_SCOPE_MESSAGE
-          );
-          return;
-        }
-        throw new Error(errorData.error || `Server returned ${response.status}`);
-      }
-
-      const data: PlanApiResponse = await response.json();
 
       if (data.isDefinition && data.definition) {
         setPlan(null);
@@ -150,7 +142,7 @@ export default function App() {
           resultsRef.current?.scrollIntoView({ behavior: 'smooth' });
         }, 150);
       } else {
-        throw new Error('No measurement plan received. Please try again.');
+        throw new Error(data.error || 'No measurement plan received. Please try again.');
       }
     } catch (err: any) {
       console.error('Plan generation failed:', err);
@@ -222,7 +214,7 @@ export default function App() {
     fetchPlan({});
   };
 
-  const handleSelectSuggestedGoal = (suggestedGoal: string) => {
+  const handleSelectSuggestedGoal = async (suggestedGoal: string) => {
     setBusinessGoal(suggestedGoal);
     setDefinitionData(null);
     setOutOfScopeError(null);
@@ -231,34 +223,28 @@ export default function App() {
     setIsLoading(true);
     setErrorMessage(null);
 
-    fetch('/api/generate-plan', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    try {
+      const data: PlanApiResponse = await generateMeasurementPlanClientSide({
         businessGoal: suggestedGoal.trim(),
         industry,
         platform,
         analyticsTool,
-      }),
-    })
-      .then(async (res) => {
-        const data: PlanApiResponse = await res.json();
-        if (data.plan) {
-          setPlan(data.plan);
-          setTimeout(() => {
-            resultsRef.current?.scrollIntoView({ behavior: 'smooth' });
-          }, 150);
-        } else if (data.isVague) {
-          setIsVague(true);
-          setClarificationQuestions(data.clarificationQuestions || DEFAULT_CLARIFYING_QUESTIONS);
-        }
-      })
-      .catch((err) => {
-        setErrorMessage(err.message || 'Failed to generate plan');
-      })
-      .finally(() => {
-        setIsLoading(false);
       });
+
+      if (data.plan) {
+        setPlan(data.plan);
+        setTimeout(() => {
+          resultsRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }, 150);
+      } else if (data.isVague) {
+        setIsVague(true);
+        setClarificationQuestions(data.clarificationQuestions || DEFAULT_CLARIFYING_QUESTIONS);
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to generate plan');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleProceedWithClarifications = (answers: Record<string, string>) => {
@@ -374,7 +360,11 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50/60 text-slate-800 font-sans antialiased flex flex-col selection:bg-sky-100 selection:text-sky-900">
-      <Header onShowGuide={() => setShowGuide(true)} />
+      <Header
+        onShowGuide={() => setShowGuide(true)}
+        onShowApiKeyModal={() => setShowApiKeyModal(true)}
+        hasApiKey={hasApiKey}
+      />
 
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6">
         {/* Intro Hero Box */}
@@ -563,6 +553,13 @@ export default function App() {
 
       {/* Consultant Guide Modal */}
       <ConsultantGuideModal isOpen={showGuide} onClose={() => setShowGuide(false)} />
+
+      {/* API Key & Netlify Deployment Modal */}
+      <ApiKeyModal
+        isOpen={showApiKeyModal}
+        onClose={() => setShowApiKeyModal(false)}
+        onKeyChange={handleKeyChange}
+      />
     </div>
   );
 }
