@@ -3,7 +3,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { GoogleGenAI, Type } from '@google/genai';
 import {
   MeasurementPlan,
   PlanApiResponse,
@@ -30,42 +29,11 @@ export interface GeneratePlanOptions {
   platform?: string;
   analyticsTool?: string;
   clarifications?: Record<string, string>;
-  customApiKey?: string;
-}
-
-const STORAGE_KEY = 'measurecraft_gemini_api_key';
-
-export function getStoredApiKey(): string {
-  if (typeof window === 'undefined') return '';
-  return localStorage.getItem(STORAGE_KEY) || '';
-}
-
-export function setStoredApiKey(key: string): void {
-  if (typeof window === 'undefined') return;
-  if (key.trim()) {
-    localStorage.setItem(STORAGE_KEY, key.trim());
-  } else {
-    localStorage.removeItem(STORAGE_KEY);
-  }
-}
-
-export function getEffectiveApiKey(customApiKey?: string): string {
-  if (customApiKey && customApiKey.trim()) {
-    return customApiKey.trim();
-  }
-  const stored = getStoredApiKey();
-  if (stored) return stored;
-
-  const envKey = (import.meta as any).env?.VITE_GEMINI_API_KEY || (import.meta as any).env?.GEMINI_API_KEY;
-  if (envKey && envKey !== 'MY_GEMINI_API_KEY' && !envKey.startsWith('MY_')) {
-    return envKey;
-  }
-  return '';
 }
 
 /**
  * Deterministic expert fallback engine.
- * Generates an end-to-end measurement plan client-side with 0 external network dependencies.
+ * Generates an end-to-end measurement plan client-side if network connection is unavailable.
  */
 export function generateLocalConsultantPlan(
   goal: string,
@@ -81,7 +49,7 @@ export function generateLocalConsultantPlan(
 
   const goalContext = `${lowerGoal} ${clarifiedAction} ${clarifiedMetric}`.trim();
 
-  // Industry-specific parameter configuration (Industry Dropdown Scope: guide parameter terminology ONLY)
+  // Industry-specific parameter configuration
   const isFintechIndustry = lowerIndustry.includes('fintech') || lowerIndustry.includes('financial');
   const isSaasIndustry = lowerIndustry.includes('saas') || lowerIndustry.includes('software');
   const isHealthcareIndustry = lowerIndustry.includes('health') || lowerIndustry.includes('medical');
@@ -112,7 +80,7 @@ export function generateLocalConsultantPlan(
       goalContext.includes('ctr') ||
       goalContext.includes('rate'));
 
-  // 2. E-commerce Checkout: ONLY if user explicitly mentions cart, checkout, or purchase
+  // 2. E-commerce Checkout
   const hasEcommerce =
     !hasApplicationFunnel &&
     (goalContext.includes('checkout') ||
@@ -121,7 +89,7 @@ export function generateLocalConsultantPlan(
       goalContext.includes('shopping cart') ||
       goalContext.includes('order completion'));
 
-  // 3. Blog & Editorial: ONLY if user explicitly mentions blog, articles, or editorial reading
+  // 3. Blog & Editorial
   const hasContentOrBlog =
     goalContext.includes('blog') ||
     goalContext.includes('article') ||
@@ -129,7 +97,7 @@ export function generateLocalConsultantPlan(
     goalContext.includes('read') ||
     goalContext.includes('newsletter');
 
-  // 4. App Retention: ONLY if user explicitly mentions retention, onboarding, churn, or app active users
+  // 4. App Retention
   const hasAppRetention =
     lowerGoal.includes('retention') ||
     lowerGoal.includes('onboarding') ||
@@ -166,7 +134,7 @@ export function generateLocalConsultantPlan(
       goalContext.includes('quote') ||
       goalContext.includes('inquiry'));
 
-  // 8. Financial Services KYC / Account Funding: STRICT RULE - ONLY if user explicitly mentions 'kyc', 'funding', 'deposits', or 'bank transfer' in their text!
+  // 8. Financial Services KYC / Account Funding
   const hasFintech =
     goalContext.includes('kyc') ||
     goalContext.includes('identity verification') ||
@@ -184,7 +152,6 @@ export function generateLocalConsultantPlan(
     goalContext.includes('clinic booking') ||
     goalContext.includes('telehealth visit');
 
-  // Pillar 0: Product Page & Application Funnel
   const applicationFunnelModule = {
     name: 'Product Page & Application Funnel',
     kpis: [
@@ -321,7 +288,6 @@ export function generateLocalConsultantPlan(
     ],
   };
 
-  // Pillar 1: E-commerce
   const ecommerceModule = {
     name: 'E-commerce Checkout',
     kpis: [
@@ -400,7 +366,6 @@ export function generateLocalConsultantPlan(
     ],
   };
 
-  // Pillar 2: Content & Blog
   const contentBlogModule = {
     name: 'Blog & Content Engagement',
     kpis: [
@@ -465,7 +430,6 @@ export function generateLocalConsultantPlan(
     ],
   };
 
-  // Pillar 3: Mobile App Retention & Onboarding
   const appRetentionModule = {
     name: 'App Retention & Onboarding',
     kpis: [
@@ -530,7 +494,6 @@ export function generateLocalConsultantPlan(
     ],
   };
 
-  // Pillar 4: Lead Generation
   const leadGenModule = {
     name: 'Lead Generation',
     kpis: [
@@ -581,7 +544,6 @@ export function generateLocalConsultantPlan(
     ],
   };
 
-  // Pillar 5: Financial Services (KYC / Funding ONLY when explicitly mentioned)
   const fintechModule = {
     name: 'Financial Services & KYC',
     kpis: [
@@ -622,7 +584,6 @@ export function generateLocalConsultantPlan(
     ],
   };
 
-  // Pillar 6: Healthcare
   const healthcareModule = {
     name: 'Healthcare & Consultations',
     kpis: [
@@ -662,7 +623,6 @@ export function generateLocalConsultantPlan(
     ],
   };
 
-  // Pillar 7: Landing Page & Bounce Rate Optimization
   const bounceRateModule = {
     name: 'Landing Page & Bounce Optimization',
     kpis: [
@@ -737,7 +697,6 @@ export function generateLocalConsultantPlan(
     ],
   };
 
-  // Pillar 8: Search & Discovery
   const searchModule = {
     name: 'Search & Catalog Discovery',
     kpis: [
@@ -780,7 +739,6 @@ export function generateLocalConsultantPlan(
     ],
   };
 
-  // Determine active pillars based strictly on goal words
   const activeModules: any[] = [];
   if (hasApplicationFunnel) activeModules.push(applicationFunnelModule);
   if (hasBounceRate) activeModules.push(bounceRateModule);
@@ -792,7 +750,6 @@ export function generateLocalConsultantPlan(
   if (hasHealthcare) activeModules.push(healthcareModule);
   if (hasAppRetention) activeModules.push(appRetentionModule);
 
-  // If no predefined pillar matched, build a clean dynamic module tailored to the user's exact words!
   if (activeModules.length === 0) {
     const cleanGoalWords = goal
       .replace(/[^a-zA-Z0-9 ]+/g, '')
@@ -867,7 +824,6 @@ export function generateLocalConsultantPlan(
     });
   }
 
-  // Combine ALL active pillars without dropping any objective!
   const detectedPillars = activeModules.map((m) => m.name);
   const kpis: KPIItem[] = [];
   const events: TrackingEvent[] = [];
@@ -913,11 +869,10 @@ export function generateLocalConsultantPlan(
 }
 
 /**
- * Main client-side analytics plan generator.
- * Communicates with Gemini API in-browser using user key or VITE_GEMINI_API_KEY.
- * Falls back to deterministic expert consultant engine if no key or on network failure.
+ * Main client-side service calling the application's server-side API routes.
+ * All Gemini SDK interactions occur securely on the backend server.
  */
-export async function generateMeasurementPlanClientSide(
+export async function generateMeasurementPlan(
   options: GeneratePlanOptions
 ): Promise<PlanApiResponse> {
   const {
@@ -926,7 +881,6 @@ export async function generateMeasurementPlanClientSide(
     platform = 'Both (Web & Mobile)',
     analyticsTool = 'GA4',
     clarifications = {},
-    customApiKey,
   } = options;
 
   const trimmedGoal = (businessGoal || '').trim();
@@ -937,7 +891,7 @@ export async function generateMeasurementPlanClientSide(
     };
   }
 
-  // 1. Intent Classification Check
+  // Pre-flight check for instant user experience
   const classification = classifyGoalIntent(trimmedGoal);
 
   // Type D: Completely Out-of-Scope (Coding, UI/UX, or high-stakes business strategy)
@@ -951,83 +905,9 @@ export async function generateMeasurementPlanClientSide(
     };
   }
 
-  const effectiveKey = getEffectiveApiKey(customApiKey);
-
-  // Type C: Informational Question (Metric definitions like 'What is bounce rate?')
-  if (classification.category === 'TYPE_C_INFORMATIONAL_QUESTION') {
-    const localDef = getMetricDefinition(trimmedGoal);
-
-    if (effectiveKey) {
-      try {
-        const aiClient = new GoogleGenAI({
-          apiKey: effectiveKey,
-          httpOptions: {
-            headers: {
-              'User-Agent': 'aistudio-build',
-            },
-          },
-        });
-
-        const defPrompt = `The user asked an analytics definition question: "${trimmedGoal}".
-Extract the metric name, provide a concise 2-sentence explanation of the metric for digital marketers and product analysts, and provide 2 suggested, concrete business tracking goals they might want to plan for (e.g. 'Reduce landing page bounce rate').
-Respond in valid JSON matching the schema.`;
-
-        const defCall = aiClient.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: defPrompt,
-          config: {
-            responseMimeType: 'application/json',
-            responseSchema: {
-              type: Type.OBJECT,
-              properties: {
-                metricName: { type: Type.STRING },
-                explanation: { type: Type.STRING },
-                calculationFormula: { type: Type.STRING },
-                suggestedGoals: {
-                  type: Type.ARRAY,
-                  items: { type: Type.STRING },
-                },
-              },
-              required: ['metricName', 'explanation', 'suggestedGoals'],
-            },
-          },
-        });
-
-        const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Definition timeout')), 5000)
-        );
-
-        const defRes: any = await Promise.race([defCall, timeoutPromise]);
-        if (defRes.text) {
-          const parsedDef = JSON.parse(defRes.text);
-          return {
-            intentType: 'TYPE_C_INFORMATIONAL_QUESTION',
-            isDefinition: true,
-            isVague: false,
-            definition: {
-              ...parsedDef,
-              promptToTurnIntoGoal:
-                'Turn this metric into an actionable tracking goal: To create a measurement plan, choose a concrete business objective below or enter one above.',
-            },
-          };
-        }
-      } catch (_err) {
-        // Fall through to local definition database
-      }
-    }
-
-    if (localDef) {
-      return {
-        intentType: 'TYPE_C_INFORMATIONAL_QUESTION',
-        isDefinition: true,
-        isVague: false,
-        definition: localDef,
-      };
-    }
-  }
+  const hasClarifications = Object.keys(clarifications).length > 0;
 
   // Type B: Vague/Broad Goal (Underspecified inputs like 'make the site better', 'grow my business')
-  const hasClarifications = Object.keys(clarifications).length > 0;
   if (classification.category === 'TYPE_B_VAGUE_GOAL' && !hasClarifications) {
     return {
       intentType: 'TYPE_B_VAGUE_GOAL',
@@ -1039,298 +919,62 @@ Respond in valid JSON matching the schema.`;
     };
   }
 
-  // Extract user keywords to dynamically guide generation and prevent template defaults
-  const userKeywords = trimmedGoal
-    .replace(/[^a-zA-Z0-9 ]+/g, ' ')
-    .split(/\s+/)
-    .filter((w) => w.length > 2)
-    .join(', ');
+  // Communicate with server-side endpoint running Gemini API
+  try {
+    const response = await fetch('/api/generate-plan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        businessGoal: trimmedGoal,
+        industry,
+        platform,
+        analyticsTool,
+        clarifications,
+      }),
+    });
 
-  // If Gemini API Key is available, invoke Gemini directly from the client
-  if (effectiveKey) {
-    try {
-      const aiClient = new GoogleGenAI({
-        apiKey: effectiveKey,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          },
-        },
-      });
-
-      const systemInstruction = `You are a Principal Digital Analytics Consultant and Lead Measurement Architect.
-Your task is to transform a business goal into a practical, draft digital analytics measurement plan for marketers, product owners, and junior analysts.
-
-MANDATORY ARCHITECTURAL RULES:
-1. STRICT GOAL PARSING MANDATE:
-   - USER QUERY KEYWORDS: [${userKeywords}]
-   - The event schema, KPIs, and user journey steps MUST be directly and faithfully derived from the specific verbs, nouns, and touchpoints in the user's goal input ("${trimmedGoal}").
-   - Concrete Example: When given the goal "increase clickthrough rates from product pages into application form", you MUST generate tracking for product page views/clicks and application form progression (e.g., product_page_viewed, apply_cta_clicked, application_form_started, application_form_submitted), with CTR and completion rate KPIs.
-   - Every event name, trigger, and parameter must reflect what the user actually asked to measure.
-
-2. INDUSTRY DROPDOWN SCOPE & BOUNDARIES:
-   - The selected Industry dropdown ("${industry}") serves ONLY to guide contextual parameter terminology (for example: if Industry is Fintech, include relevant parameters like 'financial_product_type', 'account_category', 'loan_tier'; if SaaS, use 'plan_tier'; if E-commerce, use 'product_category').
-   - The Industry dropdown MUST NEVER replace, dictate, or override the user's core workflow or funnel steps. Do NOT substitute the user's workflow with an industry default.
-
-3. NO DEFAULT TEMPLATE OVERRIDES:
-   - You MUST NEVER fall back to standard account funding, KYC, or generic industry templates unless the user explicitly mentions 'KYC', 'funding', 'deposits', or 'bank transfer' in their text!
-   - For a goal like "increase clickthrough rates from product pages into application form" with Fintech selected, you MUST generate Product Page and Application Form events, NEVER KYC or Account Funding events.
-   - NEVER generate shopping cart or checkout events unless the user explicitly mentions 'cart', 'checkout', or 'purchase'.
-   - NEVER generate app retention or onboarding events unless the user explicitly mentions 'app', 'retention', 'onboarding', or 'churn'.
-
-4. CONSISTENT EVENT NAMES: Every event name MUST be in lowercase snake_case (e.g. product_page_viewed, apply_cta_clicked, application_form_started, application_form_submitted).
-5. NO BENCHMARKS OR TARGETS: NEVER invent arbitrary numbers, percentage targets, or benchmarks (e.g. DO NOT say "Target: 15%"). Express KPIs strictly conceptually and with mathematical calculation formulas.
-6. NO PERSONAL DATA: Never ask for or include personally identifiable information (PII) like email, phone, personal name, or card data in tracking parameters.
-7. PLAIN, NON-TECHNICAL LANGUAGE: Explain triggers and parameters so junior analysts and marketers immediately understand what they mean and when they fire.
-8. MULTI-OBJECTIVE & MULTI-PILLAR MANDATE: When a user provides a messy or multi-objective goal (e.g., combining e-commerce checkouts, blog tracking, and app retention), the plan MUST address ALL stated pillars rather than dropping any objective. Assign a 'pillar' name to every KPI, event, and table row.
-9. FORMAT: Respond in valid JSON matching the requested schema.`;
-
-      const userPrompt = `EXACT USER GOAL TO MEASURE: "${trimmedGoal}"
-Extracted User Keywords: [${userKeywords}]
-Selected Industry Dropdown: ${industry} (SCOPE: Use ONLY to guide parameter terminology like 'financial_product_type', NEVER override the workflow!)
-Platform Context: ${platform}
-Analytics Tool: ${analyticsTool}
-${
-  hasClarifications
-    ? `User Clarifications Provided:\n${Object.entries(clarifications)
-        .map(([k, v]) => `- ${k}: ${v}`)
-        .join('\n')}`
-    : ''
-}
-
-CRITICAL EXECUTION MANDATE:
-1. STRICT GOAL PARSING: The event schema MUST be directly derived from the specific verbs and nouns in the user's goal input ("${trimmedGoal}").
-   - Example: If the goal is "increase clickthrough rates from product pages into application form", you MUST generate product page and application form events (e.g. product_page_viewed, apply_cta_clicked, application_form_started, application_form_submitted).
-2. INDUSTRY DROPDOWN SCOPE: The selected Industry (${industry}) should ONLY guide parameter terminology (e.g., using 'financial_product_type' as a parameter), NOT replace the core user workflow.
-3. NO DEFAULT TEMPLATE OVERRIDES: Never fall back to standard account funding or KYC templates unless the user explicitly mentions 'KYC', 'funding', or 'deposits' in their text.
-
-Please provide:
-1. KPIs: Distinct KPIs directly measuring the specific flow described in "${trimmedGoal}". Each KPI must have name, shortDefinition, whyItMatters, measurementFormula (no made-up benchmarks/numbers!), type ("Macro-conversion" | "Micro-conversion" | "Engagement" | "Retention"), and pillar.
-2. Events: Core events directly measuring "${trimmedGoal}" with snake_case eventName, plain description, clear trigger, keyParameters (name in snake_case, description, example), supportedKpi, and pillar.
-3. Tracking Plan Table: structured rows connecting eventName, description, trigger, parameters (comma-separated string), kpiSupported, and pillar.
-4. Summary tailored specifically to "${trimmedGoal}", and 3 practical governance tips for review.`;
-
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Fast fallback to expert engine (12s)')), 12000)
-      );
-
-      const geminiCall = aiClient.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: userPrompt,
-        config: {
-          systemInstruction,
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              isVague: { type: Type.BOOLEAN },
-              clarificationMessage: { type: Type.STRING },
-              clarificationQuestions: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    id: { type: Type.STRING },
-                    question: { type: Type.STRING },
-                    context: { type: Type.STRING },
-                    options: {
-                      type: Type.ARRAY,
-                      items: { type: Type.STRING },
-                    },
-                  },
-                  required: ['id', 'question', 'options'],
-                },
-              },
-              plan: {
-                type: Type.OBJECT,
-                properties: {
-                  summary: { type: Type.STRING },
-                  businessGoal: { type: Type.STRING },
-                  industry: { type: Type.STRING },
-                  platform: { type: Type.STRING },
-                  analyticsTool: { type: Type.STRING },
-                  detectedPillars: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING },
-                  },
-                  kpis: {
-                    type: Type.ARRAY,
-                    items: {
-                      type: Type.OBJECT,
-                      properties: {
-                        id: { type: Type.STRING },
-                        name: { type: Type.STRING },
-                        shortDefinition: { type: Type.STRING },
-                        whyItMatters: { type: Type.STRING },
-                        measurementFormula: { type: Type.STRING },
-                        type: { type: Type.STRING },
-                        pillar: { type: Type.STRING },
-                      },
-                      required: [
-                        'id',
-                        'name',
-                        'shortDefinition',
-                        'whyItMatters',
-                        'measurementFormula',
-                        'type',
-                      ],
-                    },
-                  },
-                  events: {
-                    type: Type.ARRAY,
-                    items: {
-                      type: Type.OBJECT,
-                      properties: {
-                        id: { type: Type.STRING },
-                        eventName: { type: Type.STRING },
-                        description: { type: Type.STRING },
-                        trigger: { type: Type.STRING },
-                        supportedKpi: { type: Type.STRING },
-                        pillar: { type: Type.STRING },
-                        keyParameters: {
-                          type: Type.ARRAY,
-                          items: {
-                            type: Type.OBJECT,
-                            properties: {
-                              name: { type: Type.STRING },
-                              description: { type: Type.STRING },
-                              example: { type: Type.STRING },
-                            },
-                            required: ['name', 'description', 'example'],
-                          },
-                        },
-                      },
-                      required: [
-                        'id',
-                        'eventName',
-                        'description',
-                        'trigger',
-                        'supportedKpi',
-                        'keyParameters',
-                      ],
-                    },
-                  },
-                  trackingPlanTable: {
-                    type: Type.ARRAY,
-                    items: {
-                      type: Type.OBJECT,
-                      properties: {
-                        eventName: { type: Type.STRING },
-                        description: { type: Type.STRING },
-                        trigger: { type: Type.STRING },
-                        parameters: { type: Type.STRING },
-                        kpiSupported: { type: Type.STRING },
-                        pillar: { type: Type.STRING },
-                      },
-                      required: [
-                        'eventName',
-                        'description',
-                        'trigger',
-                        'parameters',
-                        'kpiSupported',
-                      ],
-                    },
-                  },
-                  governanceTips: {
-                    type: Type.ARRAY,
-                    items: { type: Type.STRING },
-                  },
-                },
-              },
-            },
-            required: ['isVague'],
-          },
-        },
-      });
-
-      const response: any = await Promise.race([geminiCall, timeoutPromise]);
-      const textOutput = response.text;
-      if (textOutput) {
-        const parsed = JSON.parse(textOutput);
-        if (parsed.isVague && parsed.clarificationQuestions?.length) {
-          return {
-            intentType: 'TYPE_B_VAGUE_GOAL',
-            isVague: true,
-            clarificationMessage: parsed.clarificationMessage,
-            clarificationQuestions: parsed.clarificationQuestions,
-          };
-        }
-
-        if (parsed.plan) {
-          const rawKpis = Array.isArray(parsed.plan.kpis) ? parsed.plan.kpis : [];
-          const rawEvents = Array.isArray(parsed.plan.events) ? parsed.plan.events : [];
-
-          if (rawKpis.length > 0 && rawEvents.length > 0) {
-            // Enforce snake_case for all event names
-            rawEvents.forEach((ev: any) => {
-              if (ev.eventName) {
-                ev.eventName = ev.eventName
-                  .toLowerCase()
-                  .replace(/[^a-z0-9_]+/g, '_')
-                  .replace(/^_+|_+$/g, '');
-              }
-              if (!Array.isArray(ev.keyParameters)) {
-                ev.keyParameters = [];
-              }
-            });
-
-            let trackingTable = Array.isArray(parsed.plan.trackingPlanTable)
-              ? parsed.plan.trackingPlanTable
-              : [];
-
-            if (trackingTable.length === 0) {
-              trackingTable = rawEvents.map((ev: any) => ({
-                eventName: ev.eventName,
-                description: ev.description || '',
-                trigger: ev.trigger || '',
-                parameters: Array.isArray(ev.keyParameters)
-                  ? ev.keyParameters.map((p: any) => p.name).join(', ')
-                  : '',
-                kpiSupported: ev.supportedKpi || '',
-                pillar: ev.pillar || 'Primary Objective',
-              }));
-            } else {
-              trackingTable.forEach((row: any) => {
-                if (row.eventName) {
-                  row.eventName = row.eventName
-                    .toLowerCase()
-                    .replace(/[^a-z0-9_]+/g, '_')
-                    .replace(/^_+|_+$/g, '');
-                }
-              });
-            }
-
-            parsed.plan.kpis = rawKpis;
-            parsed.plan.events = rawEvents;
-            parsed.plan.trackingPlanTable = trackingTable;
-            parsed.plan.governanceTips = Array.isArray(parsed.plan.governanceTips)
-              ? parsed.plan.governanceTips
-              : [];
-
-            return {
-              ...parsed,
-              intentType: 'TYPE_A_VALID_GOAL',
-            };
-          }
-        }
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      if (errorData.isOutOfScope || errorData.outOfScopeError) {
+        return {
+          intentType: 'TYPE_D_OUT_OF_SCOPE',
+          isOutOfScope: true,
+          isVague: false,
+          error: errorData.outOfScopeError || errorData.error || OUT_OF_SCOPE_MESSAGE,
+          outOfScopeError: errorData.outOfScopeError || errorData.error || OUT_OF_SCOPE_MESSAGE,
+        };
       }
-    } catch (_err) {
-      // Seamlessly fall back to deterministic consultant engine
-      console.warn('Gemini client call failed or timed out. Falling back to local consultant engine.');
+      throw new Error(errorData.error || `Server responded with status ${response.status}`);
     }
+
+    const data: PlanApiResponse = await response.json();
+    return data;
+  } catch (err: any) {
+    console.warn('Backend server call error; using local consultant engine:', err);
+
+    if (classification.category === 'TYPE_C_INFORMATIONAL_QUESTION') {
+      const localDef = getMetricDefinition(trimmedGoal);
+      if (localDef) {
+        return {
+          intentType: 'TYPE_C_INFORMATIONAL_QUESTION',
+          isDefinition: true,
+          isVague: false,
+          definition: localDef,
+        };
+      }
+    }
+
+    const localResult = generateLocalConsultantPlan(
+      trimmedGoal,
+      industry,
+      platform,
+      analyticsTool,
+      clarifications
+    );
+
+    return {
+      ...localResult,
+      intentType: 'TYPE_A_VALID_GOAL',
+    };
   }
-
-  // Fallback to deterministic consultant engine
-  const localResult = generateLocalConsultantPlan(
-    trimmedGoal,
-    industry,
-    platform,
-    analyticsTool,
-    clarifications
-  );
-
-  return {
-    ...localResult,
-    intentType: 'TYPE_A_VALID_GOAL',
-  };
 }

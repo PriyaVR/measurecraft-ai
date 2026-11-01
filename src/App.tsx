@@ -13,7 +13,6 @@ import { EventsSection } from './components/EventsSection';
 import { TrackingPlanTable } from './components/TrackingPlanTable';
 import { GovernanceTips } from './components/GovernanceTips';
 import { ConsultantGuideModal } from './components/ConsultantGuideModal';
-import { ApiKeyModal } from './components/ApiKeyModal';
 import {
   MeasurementPlan,
   PlanApiResponse,
@@ -21,8 +20,7 @@ import {
   DefinitionData,
 } from './types';
 import {
-  generateMeasurementPlanClientSide,
-  getEffectiveApiKey,
+  generateMeasurementPlan,
 } from './services/measurementPlanService';
 import {
   checkGoalScope,
@@ -71,14 +69,8 @@ export default function App() {
   // Generated Plan
   const [plan, setPlan] = useState<MeasurementPlan | null>(null);
 
-  // Guide & API Key modals
+  // Guide modal
   const [showGuide, setShowGuide] = useState(false);
-  const [showApiKeyModal, setShowApiKeyModal] = useState(false);
-  const [hasApiKey, setHasApiKey] = useState(() => Boolean(getEffectiveApiKey()));
-
-  const handleKeyChange = () => {
-    setHasApiKey(Boolean(getEffectiveApiKey()));
-  };
 
   const resultsRef = useRef<HTMLDivElement>(null);
   const clarificationRef = useRef<HTMLDivElement>(null);
@@ -92,8 +84,7 @@ export default function App() {
     setErrorMessage(null);
 
     try {
-      // Pure client-side generation communicating directly with Gemini API or local expert engine
-      const data: PlanApiResponse = await generateMeasurementPlanClientSide({
+      const data: PlanApiResponse = await generateMeasurementPlan({
         businessGoal: businessGoal.trim(),
         industry,
         platform,
@@ -224,7 +215,7 @@ export default function App() {
     setErrorMessage(null);
 
     try {
-      const data: PlanApiResponse = await generateMeasurementPlanClientSide({
+      const data: PlanApiResponse = await generateMeasurementPlan({
         businessGoal: suggestedGoal.trim(),
         industry,
         platform,
@@ -360,11 +351,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50/60 text-slate-800 font-sans antialiased flex flex-col selection:bg-sky-100 selection:text-sky-900">
-      <Header
-        onShowGuide={() => setShowGuide(true)}
-        onShowApiKeyModal={() => setShowApiKeyModal(true)}
-        hasApiKey={hasApiKey}
-      />
+      <Header onShowGuide={() => setShowGuide(true)} />
 
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6">
         {/* Intro Hero Box */}
@@ -553,13 +540,6 @@ export default function App() {
 
       {/* Consultant Guide Modal */}
       <ConsultantGuideModal isOpen={showGuide} onClose={() => setShowGuide(false)} />
-
-      {/* API Key & Netlify Deployment Modal */}
-      <ApiKeyModal
-        isOpen={showApiKeyModal}
-        onClose={() => setShowApiKeyModal(false)}
-        onKeyChange={handleKeyChange}
-      />
     </div>
   );
 }

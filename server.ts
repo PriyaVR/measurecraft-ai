@@ -17,17 +17,19 @@ const isProduction = process.env.NODE_ENV === 'production';
 app.use(express.json({ limit: '2mb' }));
 
 // Initialize GoogleGenAI client (only used server-side)
-const apiKey = process.env.GEMINI_API_KEY;
-let aiClient: GoogleGenAI | null = null;
-if (apiKey && apiKey !== 'MY_GEMINI_API_KEY' && !apiKey.startsWith('MY_')) {
-  aiClient = new GoogleGenAI({
-    apiKey,
-    httpOptions: {
-      headers: {
-        'User-Agent': 'aistudio-build',
+function getAiClient(): GoogleGenAI | null {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (apiKey && apiKey !== 'MY_GEMINI_API_KEY' && !apiKey.startsWith('MY_')) {
+    return new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
       },
-    },
-  });
+    });
+  }
+  return null;
 }
 
 // Built-in expert fallback engine for reliability & offline support
@@ -962,13 +964,14 @@ app.post('/api/generate-plan', async (req: Request, res: Response) => {
     // Type C: Informational Question (Metric definitions like 'What is bounce rate?')
     if (classification.category === 'TYPE_C_INFORMATIONAL_QUESTION') {
       const localDef = getMetricDefinition(trimmedGoal);
+      const aiClient = getAiClient();
       if (aiClient) {
         try {
           const defPrompt = `The user asked an analytics definition question: "${trimmedGoal}".
 Extract the metric name, provide a concise 2-sentence explanation of the metric for digital marketers and product analysts, and provide 2 suggested, concrete business tracking goals they might want to plan for (e.g. 'Reduce landing page bounce rate').
 Respond in valid JSON matching the schema.`;
           const defCall = aiClient.models.generateContent({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-3.8-flash',
             contents: defPrompt,
             config: {
               responseMimeType: 'application/json',
@@ -1038,6 +1041,7 @@ Respond in valid JSON matching the schema.`;
       .join(', ');
 
     // If Gemini client is available, generate via LLM with strict consultant constraints
+    const aiClient = getAiClient();
     if (aiClient) {
       try {
         const systemInstruction = `You are a Principal Digital Analytics Consultant and Lead Measurement Architect.
@@ -1097,7 +1101,7 @@ Please provide:
         );
 
         const geminiCall = aiClient.models.generateContent({
-          model: 'gemini-2.5-flash',
+          model: 'gemini-3.8-flash',
           contents: userPrompt,
           config: {
             systemInstruction,
@@ -1315,6 +1319,57 @@ Please provide:
       error: 'Failed to generate measurement plan. Please check your input and try again.',
       details: error.message,
     });
+  }
+});
+
+// Server-side streaming endpoint supporting Server-Sent Events (SSE)
+app.post('/api/generate-plan/stream', async (req: Request, res: Response) => {
+  try {
+    const { businessGoal, industry = 'Any', platform = 'Both (Web & Mobile)', analyticsTool = 'GA4' } = req.body;
+    if (!businessGoal || typeof businessGoal !== 'string' || !businessGoal.trim()) {
+      return res.status(400).json({ error: 'Please enter a business goal.' });
+    }
+
+    const aiClient = getAiClient();
+    if (!aiClient) {
+      // Deterministic fallback response streamed back
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      const localResult = generateLocalConsultantPlan(businessGoal.trim(), industry, platform, analyticsTool);
+      res.write(`data: ${JSON.stringify(localResult)}\n\n`);
+      res.write('data: [DONE]\n\n');
+      return res.end();
+    }
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const streamResponse = await aiClient.models.generateContentStream({
+      model: 'gemini-3.8-flash',
+      contents: `Transform this business tracking goal into a digital measurement plan: "${businessGoal.trim()}" (Industry: ${industry}, Platform: ${platform}, Analytics: ${analyticsTool}). Provide KPIs, events, and tracking table in JSON format.`,
+      config: {
+        systemInstruction: 'You are a Principal Digital Analytics Consultant. Return valid JSON measurement specifications with snake_case event names.',
+        responseMimeType: 'application/json',
+      },
+    });
+
+    for await (const chunk of streamResponse) {
+      if (chunk.text) {
+        res.write(`data: ${JSON.stringify({ text: chunk.text })}\n\n`);
+      }
+    }
+    res.write('data: [DONE]\n\n');
+    res.end();
+  } catch (streamErr: any) {
+    console.error('Stream error:', streamErr);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Streaming failed', details: streamErr.message });
+    } else {
+      res.write(`data: ${JSON.stringify({ error: streamErr.message })}\n\n`);
+      res.end();
+    }
   }
 });
 
